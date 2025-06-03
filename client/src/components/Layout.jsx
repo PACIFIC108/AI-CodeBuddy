@@ -33,7 +33,7 @@ const Layout = () => {
     testCases: [],
   });
   const chatEndRef = useRef(null);
-  const backendUrl = 'http://localhost:5000/api';
+  const backendUrl = 'https://ai-codebuddy-backend.onrender.com/api';
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -57,7 +57,7 @@ const Layout = () => {
 
   useEffect(()=>{
     chrome.runtime.sendMessage({ type:"save_chat",title:context.title,content:messages },(response)=>{
-        console.log('Chat Saved',response.success);
+        // console.log('Chat Saved',response.success);
     });
   },[messages,context.title]);
  
@@ -83,14 +83,8 @@ const Layout = () => {
         };
 
         const verdictData = extractVerdict() || '';
-         // {verdictData && (
-         //  verdictId.current = verdictId.current <= verdictData[0] 
-         //    ? verdictId.current 
-         //    : verdictData[0]
-         // )}
-        // console.log([verdictData,userName,data.title])
+
         if(userName && verdictData ){
-          // verdictId.current = verdictData[0];
           try{
               await axios.post(`${backendUrl}/submission/submit`,{
                 user:userName, 
@@ -99,7 +93,7 @@ const Layout = () => {
                 language:data.language, 
                 verdict:verdictData
              })
-              console.log('Submission Successfull')
+              // console.log('Submission Successfull')
           }catch(err){
             console.log('Submission Failed');
           }
@@ -123,7 +117,6 @@ const Layout = () => {
   }, [userName]);
 
   const toggleExpand = () => {
-    // setMessages([]);
     setExpanded(!expanded);
   };
 
@@ -140,7 +133,6 @@ const Layout = () => {
        
        chrome.runtime.sendMessage({ type: "get_chat", title:context.title }, (response) => {
          const history = response;
-       // console.log('132',response)
          axios.post(`${backendUrl}/analyze`, {
             userId:userName, 
             question:context.problemStatement, 
@@ -152,7 +144,6 @@ const Layout = () => {
             chat:history
         })
         .then((res)=>{
-       // console.log(res.data);
         const data = res.data;
         const aiReply = data.history || data.explain || data.debug || data.progress || data.hint || data.reply || 'No response.';
 
