@@ -28,14 +28,13 @@ const Popup = () => {
 	}
 	 
 	useEffect(() => {
-		const fetchTitle= async ()=>{
-       chrome.runtime.sendMessage({ type: "get_title" }, (response) => {
-      console.log("title from IndexedDB:", response?.title);
-      setTitle(response?.title || '');
-    });
- }
-  fetchTitle();
-}, []);
+	  const fetchTitle= async ()=>{
+	   chrome.runtime.sendMessage({ type: "get_title" }, (response) => {
+	      setTitle(response?.title || '');
+	    });
+	 }
+	  fetchTitle();
+	}, []);
 
 	 useEffect(() => {
 	  const fetchUsername = async () => {
@@ -60,10 +59,8 @@ const Popup = () => {
   };
 
  const clearusername = async () => {
-   chrome.runtime.sendMessage({ type: "clear_user" }, (response) => {
-		 console.log("usercleared from IndexedDB:", response.msg);
-		});
-	   Reload();
+   chrome.runtime.sendMessage({ type: "clear_user" }, (response) => {});
+      Reload();
       setUsername('');
       setSaved(false);
   };
