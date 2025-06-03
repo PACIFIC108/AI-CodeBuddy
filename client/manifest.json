@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "AI-CodeBuddy",
+  "version": "1.0",
+  "description": "AI assistant for DSA hints, debugging, and progress tracking",
+  "permissions": ["scripting", "activeTab", "storage","tabs","nativeMessaging"],
+  "host_permissions": ["<all_urls>"],
+
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+
+  "action": {
+    "default_popup": "index.html",
+    "default_icon": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+  },
+
+  "content_scripts": [
+    {
+      "js": ["src/contentScript.jsx"],  
+      "matches": ["https://leetcode.com/*", "https://www.geeksforgeeks.org/*"],
+      "run_at": "document_idle"
+    }
+  ],
+ 
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  }
+
+  
+}
