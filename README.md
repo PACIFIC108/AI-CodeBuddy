@@ -26,6 +26,7 @@ A Chrome extension that provides personalized, approach-specific hints for DSA p
 
 - **Frontend:** React, Tailwind, Vite
 - **Backend:** Node.js, Express, OpenAI API, mongoDB
+- **Model/LLM:** Qwen 2.5 (by Alibaba) via OpenRouter
 - **Hosting:** Render
 
 ---
