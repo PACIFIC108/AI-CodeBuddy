@@ -1,4 +1,4 @@
-import React, { useEffect,useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   User,
   Trash2,
@@ -7,9 +7,9 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import robo from '/bot.jpg'; 
-import { saveUsername,
-	clearChatHistory, 
-	getUsername 
+import {
+  saveUsername,
+  getUsername 
 } from '../storage';
 import axios from 'axios';
 
@@ -19,39 +19,39 @@ const Popup = () => {
   const [username, setUsername] = useState('');
   const [title, setTitle] = useState('');
   const [saved, setSaved] = useState(false);
-	const Reload=()=>{
-		chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-		  if (tabs[0]?.id) {
-		    chrome.tabs.reload(tabs[0].id);
-		  }
-		});
-	}
-	 
-	useEffect(() => {
-		const fetchTitle= async ()=>{
-       chrome.runtime.sendMessage({ type: "get_title" }, (response) => {
-      console.log("title from IndexedDB:", response?.title);
-      setTitle(response?.title || '');
+  const Reload = () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.tabs.reload(tabs[0].id);
+      }
     });
- }
-  fetchTitle();
-}, []);
+  }
+	 
+  useEffect(() => {
+    const fetchTitle = async () => {
+      chrome.runtime.sendMessage({ type: "get_title" }, (response) => {
+        // console.log("title from IndexedDB:", response?.title);
+        setTitle(response?.title || '');
+      });
+    }
+    fetchTitle();
+  }, []);
 
-	 useEffect(() => {
-	  const fetchUsername = async () => {
-	    const user = await getUsername();
-	    if (user) {
-	      setUsername(user);
-	      setSaved(true);
-	    } else {
-	      setUsername(''); 
-	    }
-	  };
+  useEffect(() => {
+    const fetchUsername = async () => {
+      const user = await getUsername();
+      if (user) {
+        setUsername(user);
+        setSaved(true);
+      } else {
+        setUsername(''); 
+      }
+    };
 
-	  fetchUsername();
-	}, []);
+    fetchUsername();
+  }, []);
 
- const saveusername = async () => {
+  const saveusername = async () => {
     if (username.trim()) {
       await saveUsername(username);
       Reload();
@@ -59,29 +59,30 @@ const Popup = () => {
     }
   };
 
- const clearusername = async () => {
-   chrome.runtime.sendMessage({ type: "clear_user" }, (response) => {
-		 console.log("usercleared from IndexedDB:", response.msg);
-		});
-	   Reload();
-      setUsername('');
-      setSaved(false);
+  const clearusername = async () => {
+    chrome.runtime.sendMessage({ type: "clear_user" }, (response) => {
+      // console.log("usercleared from IndexedDB:", response.msg);
+    });
+    Reload();
+    setUsername('');
+    setSaved(false);
   };
 
   const clearChat = async () => {
-    chrome.runtime.sendMessage({type:"delete_chat",title:title},(response)=>{
-    	console.log(response);
-    	Reload();
+    chrome.runtime.sendMessage({ type: "delete_chat", title: title }, (response) => {
+      // console.log(response);
+      Reload();
     })
   };
 
-  const deleteUserHistory = async () => {console.log([title])
-	 	try{
-	 	  await axios.delete(`http://localhost:5000/api/submission/${username}/${title}`);
-	 	   console.log('deletion successfull')
-	    }catch(err){
-	    	console.log({Error:err});
-	    }
+  const deleteUserHistory = async () => {
+    console.log([title])
+    try {
+      await axios.delete(`http://localhost:5000/api/submission/${username}/${title}`);
+      // console.log('deletion successfull')
+    } catch (err) {
+      console.log({ Error: err });
+    }
   };
 
 
@@ -112,8 +113,8 @@ const Popup = () => {
               onClick={saveusername}
               className={`mt-3 w-full flex items-center justify-center gap-2 py-2 rounded-md
 				    ${!!username 
-				      ? 'bg-blue-600 hover:bg-blue-700 text-white' 
-				      : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
             >
               <CheckCircle2 className="w-4 h-4" />
               Save Username
