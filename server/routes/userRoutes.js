@@ -2,12 +2,12 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/User'); 
 
-// Get user by ID
+
 router.post('/:id', async (req, res) => {
   try {
     const user = await User.findOneAndUpdate(
-      {name: req.params.id},
-      {name:req.params.id},
+      { name: req.params.id },
+      { name: req.params.id },
       {
         new: true,
         upsert: true,

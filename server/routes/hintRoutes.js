@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const axios = require('axios');
-const {askOpenAI} = require('../utils/openaiHelper')
+const {askOpenAI} = require('../utils/openaiHelper');
+const { hintPROMPT } = require('../prompts/prompt');
 
-//post method for hint
+
 router.post('/',async (req,res)=>{
 	try{
 		const { title,question, code, query, language,chat } = req.body;
-		const prompt = process.env.hintPROMPT
+		const prompt = hintPROMPT
 				.replace('__title__',title)
 				.replace('__question__',question)
 				.replace('__code__',code)

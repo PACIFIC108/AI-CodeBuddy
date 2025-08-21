@@ -1,14 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const axios = require('axios');
 const {askOpenAI} = require('../utils/openaiHelper');
+const { dryrunPROMPT } = require('../prompts/prompt');
 
 
 router.post('/', async (req, res) => {
   try {
-    const { title, code, language,question, input,chat } = req.body;
+    const { code, language,question, input,chat } = req.body;
 
-    const prompt = process.env.dryrunPROMPT
+    const prompt = dryrunPROMPT
           .replace('__language__',language)
           .replace('__code__',code)
           .replace('__input__',JSON.stringify(input, null, 2))

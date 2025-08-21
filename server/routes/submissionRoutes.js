@@ -8,18 +8,16 @@ router.post('/submit', async (req, res) => {
   try {
     const { user, title, code, language, verdict } = req.body;
     let hint = false;
-    const User = await hintUsed.findOne({user:user,questionId:title});
-    if(User)hint = User.status;
+    const User = await hintUsed.findOne({ user: user, questionId: title });
+    if (User) hint = User.status;
 
     const updatedSubmission = await Submission.findOneAndUpdate(
       { user: user, questionId: title },
       {
-        // user,
         code,
         verdict,
         language,
-        // questionId: title,
-        type:hint
+        type: hint
       },
       {
         new: true,
@@ -36,28 +34,28 @@ router.post('/submit', async (req, res) => {
 });
 
 
-router.get('/:userId',async (req,res)=>{
-   try{
-     const { userId } = req.params;
+router.get('/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
 
-     const submission = await Submission.find({user:userId}).sort({createdAt:-1});
-     return res.status(200).json(submission);
-   }
-   catch(err){
-     res.status(500).json({message:'Error fetching submission'});
-   }
+    const submission = await Submission.find({ user: userId }).sort({ createdAt: -1 });
+    return res.status(200).json(submission);
+  }
+  catch (err) {
+    res.status(500).json({ message: 'Error fetching submission' });
+  }
 });
 
 
 router.delete('/:user/:problemId', async (req, res) => {
-  try{
+  try {
     const { user, problemId } = req.params;
 
-    await Submission.deleteMany({ user: user, questionId:problemId });
+    await Submission.deleteMany({ user: user, questionId: problemId });
     res.json({ success: true });
-    }catch(err){
-        res.status(500).json({error:'Error deleting submission'})
-    }
+  } catch (err) {
+    res.status(500).json({ error: 'Error deleting submission' })
+  }
 });
 
 
