@@ -1,7 +1,13 @@
 @import "tailwindcss";
 html, body, #root {
-  height: 100%;
   margin: 0;
-  overflow:hidden;
-/*  background-color: darkgrey;*/
+  width: 360px;
+  max-width: 100%;
+}
+
+body, #root {
+  min-height: 0;
+  max-height: 580px;
+  overflow: hidden;
+  background: white;
 }

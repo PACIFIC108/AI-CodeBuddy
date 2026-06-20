@@ -8,6 +8,12 @@ const { progressPROMPT } = require('../prompts/prompt');
 router.get('/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
+    const aiConfig = {
+      provider: req.get('x-ai-provider'),
+      apiKey: req.get('x-ai-key'),
+      model: req.get('x-ai-model'),
+      baseURL: req.get('x-ai-base-url'),
+    };
     const user = await User.findOne({ name: userId }).populate('history');
     if (!user) return res.status(400).json({ error: 'user not found' });
 
@@ -26,7 +32,8 @@ router.get('/:userId', async (req, res) => {
     const response = await askOpenAI({
       prompt,
       temp: 0.5,
-      cont: 'You are a helpful DSA progress tracker assistant.'
+      cont: 'You are a helpful DSA progress tracker assistant.',
+      aiConfig
     });
 
     return res.status(200).json({ progress: response });

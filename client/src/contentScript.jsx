@@ -1,27 +1,83 @@
-import ReactDOM from "react-dom/client";
-import App from "./App";
-import "./index.css"; 
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import widgetStyles from './index.css?inline';
+import { applyLeetCodePatch, isLeetCodeProblemPage, readLeetCodeContext } from './integrations/leetcode';
+import { sendRuntimeMessage } from './runtime';
 
-// Function to check if current page is a problem page
-function isProblemPage() {
-  return window.location.pathname.startsWith("/problems/");
-}
+let root;
+let container;
+let shadowRoot;
+let currentContext;
+let lastSubmission = '';
+let scanTimer;
+let scanning = false;
 
-if (isProblemPage()) {
-  // Create container for your React app
-  const container = document.createElement("div");
-  container.id = "ai-codebuddy-root";
+const unmount = () => {
+  root?.unmount();
+  container?.remove();
+  root = undefined;
+  container = undefined;
+  shadowRoot = undefined;
+  currentContext = undefined;
+};
 
-  //  isolate styles
-  container.style.position = "fixed";
-  container.style.bottom = "20px";
-  container.style.right = "20px";
-  container.style.zIndex = "999999"; // keep on top
-  container.style.all = "initial";   // prevent page CSS overriding
+const ensureMounted = context => {
+  if (!root) {
+    container = document.createElement('div');
+    container.id = 'ai-codebuddy-root';
+    Object.assign(container.style, { all: 'initial' });
+    document.body.appendChild(container);
+    shadowRoot = container.attachShadow({ mode: 'open' });
+    const style = document.createElement('style');
+    style.textContent = widgetStyles;
+    const mountPoint = document.createElement('div');
+    shadowRoot.append(style, mountPoint);
+    root = ReactDOM.createRoot(mountPoint);
+  }
+  root.render(<App context={context} />);
+};
 
-  document.body.appendChild(container);
+const scan = async () => {
+  if (scanning) return;
+  scanning = true;
+  try {
+    if (!isLeetCodeProblemPage()) return unmount();
+    const snapshot = await readLeetCodeContext();
+    const { verdict, ...context } = snapshot;
+    if (JSON.stringify(context) !== JSON.stringify(currentContext)) {
+      currentContext = context;
+      ensureMounted(context);
+      if (context.title) await sendRuntimeMessage({ type: 'save_title', title: context.title });
+    }
+    const fingerprint = verdict && context.code ? `${context.title}:${verdict}:${context.code}` : '';
+    if (fingerprint && fingerprint !== lastSubmission) {
+      lastSubmission = fingerprint;
+      await sendRuntimeMessage({
+        type: 'record_submission',
+        submission: { title: context.title, code: context.code, language: context.language, verdict },
+      });
+    }
+  } catch (error) {
+    console.warn('AI AlgoBuddy page integration:', error.message);
+  } finally {
+    scanning = false;
+  }
+};
 
-  // Mount  React app
-  const root = ReactDOM.createRoot(container);
-  root.render(<App />);
-}
+const scheduleScan = () => {
+  clearTimeout(scanTimer);
+  scanTimer = setTimeout(scan, 400);
+};
+
+scan();
+const pageObserver = new MutationObserver(scheduleScan);
+pageObserver.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type !== 'apply_editor_patch') return false;
+  void sender;
+  applyLeetCodePatch(message.patch)
+    .then(result => sendResponse({ ok: true, data: result }))
+    .catch(error => sendResponse({ ok: false, error: error.message }));
+  return true;
+});

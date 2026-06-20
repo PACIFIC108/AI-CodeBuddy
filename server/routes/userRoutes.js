@@ -5,9 +5,11 @@ const User = require('../models/User');
 
 router.post('/:id', async (req, res) => {
   try {
+    const name = String(req.params.id || '').trim();
+    if (!name || name.length > 80) return res.status(400).json({ error: 'Invalid username.' });
     const user = await User.findOneAndUpdate(
-      { name: req.params.id },
-      { name: req.params.id },
+      { name },
+      { name },
       {
         new: true,
         upsert: true,

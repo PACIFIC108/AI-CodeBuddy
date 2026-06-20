@@ -1,157 +1,148 @@
-import React, { useEffect, useState } from 'react';
-import {
-  User,
-  Trash2,
-  Bot,
-  LogOut,
-  CheckCircle2,
-} from 'lucide-react';
-import robo from '/bot.jpg'; 
-import {
-  saveUsername,
-  getUsername 
-} from '../storage';
-import axios from 'axios';
-
-
+import { useEffect, useState } from 'react';
+import { Bot, CheckCircle2, KeyRound, LogOut, Trash2, User } from 'lucide-react';
+import robo from '/bot.jpg';
+import { PROVIDER_DEFAULTS } from './config';
+import { sendRuntimeMessage } from './runtime';
 
 const Popup = () => {
   const [username, setUsername] = useState('');
   const [title, setTitle] = useState('');
-  const [saved, setSaved] = useState(false);
-  const Reload = () => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]?.id) {
-        chrome.tabs.reload(tabs[0].id);
-      }
+  const [savedUser, setSavedUser] = useState(false);
+  const [status, setStatus] = useState('');
+  const [settings, setSettings] = useState({
+    provider: 'openrouter', apiKey: '', model: '', baseURL: '',
+  });
+
+  const reloadActiveTab = () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+      if (tabs[0]?.id) chrome.tabs.reload(tabs[0].id);
     });
-  }
-	 
-  useEffect(() => {
-    const fetchTitle = async () => {
-      chrome.runtime.sendMessage({ type: "get_title" }, (response) => {
-        // console.log("title from IndexedDB:", response?.title);
-        setTitle(response?.title || '');
-      });
-    }
-    fetchTitle();
-  }, []);
+  };
 
   useEffect(() => {
-    const fetchUsername = async () => {
-      const user = await getUsername();
-      if (user) {
-        setUsername(user);
-        setSaved(true);
-      } else {
-        setUsername(''); 
-      }
+    Promise.all([
+      sendRuntimeMessage({ type: 'get_title' }),
+      sendRuntimeMessage({ type: 'get_username' }),
+      sendRuntimeMessage({ type: 'get_ai_settings' }),
+    ]).then(([titleResult, userResult, aiSettings]) => {
+      setTitle(titleResult.title || '');
+      setUsername(userResult.username || '');
+      setSavedUser(Boolean(userResult.username));
+      setSettings(aiSettings);
+    });
+  }, []);
+
+  const saveProfile = async () => {
+    if (!username.trim()) return;
+    await sendRuntimeMessage({ type: 'save_username', username: username.trim() });
+    setSavedUser(true);
+    setStatus('Username saved.');
+    reloadActiveTab();
+  };
+
+  const saveProvider = async () => {
+    const normalized = {
+      ...settings,
+      apiKey: settings.apiKey.trim(),
+      model: settings.model.trim(),
+      baseURL: settings.provider === 'custom' ? settings.baseURL.trim() : '',
     };
-
-    fetchUsername();
-  }, []);
-
-  const saveusername = async () => {
-    if (username.trim()) {
-      await saveUsername(username);
-      Reload();
-      setSaved(true);
+    if (!normalized.apiKey || !normalized.model || (normalized.provider === 'custom' && !normalized.baseURL)) {
+      setStatus('API key, model, and custom URL (when selected) are required.');
+      return;
     }
+    await sendRuntimeMessage({ type: 'save_ai_settings', settings: normalized });
+    setSettings(normalized);
+    setStatus('AI provider saved locally.');
+    reloadActiveTab();
   };
 
-  const clearusername = async () => {
-    chrome.runtime.sendMessage({ type: "clear_user" }, (response) => {
-      // console.log("usercleared from IndexedDB:", response.msg);
+  const clearUsername = () => {
+    sendRuntimeMessage({ type: 'clear_user' }).then(() => {
+      setUsername('');
+      setSavedUser(false);
+      setStatus('Username removed.');
+      reloadActiveTab();
     });
-    Reload();
-    setUsername('');
-    setSaved(false);
   };
 
-  const clearChat = async () => {
-    chrome.runtime.sendMessage({ type: "delete_chat", title: title }, (response) => {
-      // console.log(response);
-      Reload();
-    })
+  const clearChat = () => {
+    sendRuntimeMessage({ type: 'delete_chat', title }).then(() => {
+      setStatus('Chat cleared.');
+      reloadActiveTab();
+    });
   };
 
   const deleteUserHistory = async () => {
-    console.log([title])
+    if (!username || !title) return;
     try {
-      await axios.delete(`http://localhost:5000/api/submission/${username}/${title}`);
-      // console.log('deletion successfull')
-    } catch (err) {
-      console.log({ Error: err });
+      await sendRuntimeMessage({ type: 'delete_submission', title });
+      setStatus('Current problem history deleted.');
+    } catch {
+      setStatus('Could not delete submission history.');
     }
   };
 
+  const provider = PROVIDER_DEFAULTS[settings.provider];
 
   return (
-    <div className="w-[360px] h-[400px] bg-white rounded-xl shadow-xl p-4 font-sans text-black">
-      <div className="flex flex-col items-center space-y-2">
-        <img src={robo} alt="Bot" className="h-20 rounded-full shadow-md" />
-        <h1 className="text-2xl font-extrabold mt-2">
-          AI <span className="text-orange-600">AlgoBuddy</span>
-        </h1>
-        <p className="text-sm text-gray-600 -mt-1 mb-2">
-          Your LeetCode Copilot for DSA Excellence 🚀
-        </p>
+    <div className="w-[360px] h-[560px] max-h-[580px] overflow-y-auto bg-white p-3 font-sans text-black box-border">
+      <div className="flex flex-col items-center gap-1.5 min-w-0">
+        <img src={robo} alt="AI AlgoBuddy" className="h-12 rounded-full shadow-md" />
+        <h1 className="text-xl font-extrabold">AI <span className="text-orange-600">AlgoBuddy</span></h1>
+        <p className="text-xs text-gray-600">Your in-page DSA learning assistant</p>
 
-        {!saved && (
-          <>
-            <div className="flex items-center w-full gap-2 border rounded-md px-3 py-2 mt-2">
-              <User className="h-4 w-4 text-gray-500" />
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter LeetCode username"
-                className="w-full outline-none text-sm"
-              />
-            </div>
-            <button
-              onClick={saveusername}
-              className={`mt-3 w-full flex items-center justify-center gap-2 py-2 rounded-md
-				    ${!!username 
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white' 
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              Save Username
-            </button>
-          </>
-        )}
-
-        {saved && (
-          <div className="w-full mt-4 space-y-2">
-            <div className="text-sm text-center text-green-600 flex items-center justify-center gap-1">
-              <Bot className="w-4 h-4" />
-              Welcome back, <strong>{username}</strong>!
-            </div>
-
-            <button
-              onClick={clearChat}
-              className="w-full flex items-center justify-center gap-2 bg-yellow-500 text-white py-2 rounded-md hover:bg-yellow-600"
-            >
-              <Trash2 className="w-4 h-4" />
-              Clear Chat
-            </button>
-            <button
-              onClick={deleteUserHistory}
-              className="w-full flex items-center justify-center gap-2 bg-red-500 text-white py-2 rounded-md hover:bg-red-600"
-            >
-              <Trash2 className="w-4 h-4" />
-              Delete Current Submission History
-            </button>
-            <button
-              onClick={clearusername}
-              className="w-full flex items-center justify-center gap-2 bg-gray-700 text-white py-2 rounded-md hover:bg-gray-800"
-            >
-              <LogOut className="w-4 h-4" />
-              Leave
+        <section className="w-full min-w-0 border-t pt-2 mt-1 space-y-1.5">
+          <label className="text-xs font-semibold flex items-center gap-1"><User size={14} /> LeetCode username</label>
+          <div className="flex min-w-0 gap-2">
+            <input className="min-w-0 flex-1 border rounded px-3 py-2 text-sm" value={username}
+              onChange={event => setUsername(event.target.value)} placeholder="Username" />
+            <button onClick={saveProfile} disabled={!username.trim()}
+              className="w-10 shrink-0 flex items-center justify-center bg-blue-600 disabled:bg-gray-300 text-white rounded" title="Save username">
+              <CheckCircle2 size={17} />
             </button>
           </div>
+        </section>
+
+        <section className="w-full min-w-0 border-t pt-2 mt-1 space-y-1.5">
+          <label className="text-xs font-semibold flex items-center gap-1"><KeyRound size={14} /> AI provider</label>
+          <select className="w-full border rounded px-3 py-2 text-sm" value={settings.provider}
+            onChange={event => setSettings(current => ({ ...current, provider: event.target.value, baseURL: '' }))}>
+            {Object.entries(PROVIDER_DEFAULTS).map(([value, item]) =>
+              <option key={value} value={value}>{item.label}</option>)}
+          </select>
+          {settings.provider === 'custom' && (
+            <input className="w-full border rounded px-3 py-2 text-sm" value={settings.baseURL}
+              onChange={event => setSettings(current => ({ ...current, baseURL: event.target.value }))}
+              placeholder="https://provider.example.com/v1" />
+          )}
+          <input type="password" autoComplete="off" className="w-full border rounded px-3 py-2 text-sm"
+            value={settings.apiKey} onChange={event => setSettings(current => ({ ...current, apiKey: event.target.value }))}
+            placeholder={`${provider.label} API key`} />
+          <input className="w-full border rounded px-3 py-2 text-sm" value={settings.model}
+            onChange={event => setSettings(current => ({ ...current, model: event.target.value }))}
+            placeholder={provider.modelPlaceholder} />
+          <button onClick={saveProvider} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded text-sm">
+            Save AI configuration
+          </button>
+          <p className="text-[10px] leading-4 text-gray-500">Stored in this browser and sent to your backend only when you ask AI.</p>
+        </section>
+
+        {savedUser && (
+          <section className="w-full border-t pt-2 mt-1 grid grid-cols-2 gap-2">
+            <button onClick={clearChat} className="flex items-center justify-center gap-1 bg-yellow-500 text-white py-2 rounded text-xs">
+              <Trash2 size={14} /> Clear chat
+            </button>
+            <button onClick={deleteUserHistory} className="flex items-center justify-center gap-1 bg-red-500 text-white py-2 rounded text-xs">
+              <Trash2 size={14} /> Delete history
+            </button>
+            <button onClick={clearUsername} className="col-span-2 flex items-center justify-center gap-1 bg-gray-700 text-white py-2 rounded text-xs">
+              <LogOut size={14} /> Remove username
+            </button>
+          </section>
         )}
+
+        {status && <div className="w-full text-center text-xs text-blue-700 bg-blue-50 rounded p-2"><Bot size={13} className="inline mr-1" />{status}</div>}
       </div>
     </div>
   );

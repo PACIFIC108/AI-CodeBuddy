@@ -6,7 +6,7 @@ const { hintPROMPT } = require('../prompts/prompt');
 
 router.post('/',async (req,res)=>{
 	try{
-		const { title,question, code, query, language,chat } = req.body;
+		const { title,question, code, query, language,chat, aiConfig } = req.body;
 		const prompt = hintPROMPT
 				.replace('__title__',title)
 				.replace('__question__',question)
@@ -19,7 +19,8 @@ router.post('/',async (req,res)=>{
 			prompt,
 			temp:.5,
 			cont:'You are a helpful and concise programming assistant.',
-			chat
+			chat,
+			aiConfig
 		});
 
 		res.status(200).json({hint:response});

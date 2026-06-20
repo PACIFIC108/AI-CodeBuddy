@@ -6,7 +6,7 @@ const { dryrunPROMPT } = require('../prompts/prompt');
 
 router.post('/', async (req, res) => {
   try {
-    const { code, language,question, input,chat } = req.body;
+    const { code, language,question, input,chat, aiConfig } = req.body;
 
     const prompt = dryrunPROMPT
           .replace('__language__',language)
@@ -18,7 +18,8 @@ router.post('/', async (req, res) => {
       prompt,
       temp:0.3,
       cont:'You are a helpful assistant that simulates code line-by-line.',
-      chat
+      chat,
+      aiConfig
     })
     
 

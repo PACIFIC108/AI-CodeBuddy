@@ -1,262 +1,171 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { SendHorizonal, Bot } from 'lucide-react';
-import axios from 'axios';
-import {
-  extractProblemTitle,
-  extractProblemStatement,
-  extractCode,
-  extractLanguage,
-  extractTestCases,
-  extractVerdict
-} from './utils';
+import { useEffect, useRef, useState } from 'react';
+import { Bot, SendHorizontal } from 'lucide-react';
+import { sendRuntimeMessage } from '../runtime';
+import { createCodeDiff } from '../utils/codeDiff';
 
-const Layout = () => {
+const normalizeMessages = messages => (Array.isArray(messages) ? messages : [])
+  .filter(message => message && typeof message.content === 'string')
+  .map(message => ({ ...message, role: message.role === 'bot' ? 'assistant' : message.role }))
+  .filter(message => ['user', 'assistant'].includes(message.role));
+
+const Layout = ({ context }) => {
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState('');
-  const [userName, setUsername] = useState('');
   const [messages, setMessages] = useState([]);
+  const [chatReady, setChatReady] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [context, setContext] = useState({
-    title: '',
-    code: '',
-    language: '',
-    problemStatement: '',
-    testCases: [],
-  });
-
-  const Currentdata = useRef(context); 
+  const [pendingPatch, setPendingPatch] = useState(null);
+  const [applyingPatch, setApplyingPatch] = useState(false);
   const chatEndRef = useRef(null);
-  const backendUrl = 'http://localhost:5000/api';
 
-  // Auto-scroll to latest message
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  useEffect(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages]);
 
-  // Get username from background script
   useEffect(() => {
-    chrome.runtime.sendMessage({ type: "get_username" }, (response) => {
-      if (response?.username) setUsername(response.username);
-    });
+    sendRuntimeMessage({ type: 'register_user' }).catch(() => {});
   }, []);
 
-  // Load chat history for current problem title
   useEffect(() => {
-    if (!context.title) return;
-    chrome.runtime.sendMessage({ type: "get_chat", title: context.title }, (response) => {
-      if (Array.isArray(response)) {
-        setMessages(response);
+    if (!context?.title) return;
+    let cancelled = false;
+    setChatReady(false);
+    setPendingPatch(null);
+    sendRuntimeMessage({ type: 'get_chat', title: context.title })
+      .then(history => { if (!cancelled) setMessages(normalizeMessages(history)); })
+      .finally(() => { if (!cancelled) setChatReady(true); });
+    return () => { cancelled = true; };
+  }, [context?.title]);
+
+  useEffect(() => {
+    if (!chatReady || !context?.title) return;
+    sendRuntimeMessage({ type: 'save_chat', title: context.title, content: messages }).catch(() => {});
+  }, [messages, context?.title, chatReady]);
+
+  const addAssistantMessage = content => setMessages(current => [...current, { role: 'assistant', content }]);
+
+  const handleAsk = async () => {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery || loading) return;
+    const history = messages;
+    const editorSnapshot = {
+      expectedCode: context.code,
+      expectedVersionId: context.editorVersionId,
+      expectedModelUri: context.editorModelUri,
+    };
+    setMessages(current => [...current, { role: 'user', content: trimmedQuery }]);
+    setQuery('');
+    setLoading(true);
+    try {
+      const data = await sendRuntimeMessage({
+        type: 'analyze',
+        payload: {
+          question: context.problemStatement,
+          code: context.code,
+          language: context.language,
+          title: context.title,
+          input: context.testCases,
+          query: trimmedQuery,
+          chat: history,
+        },
+      });
+      if (data.patch) {
+        setPendingPatch({
+          ...data.patch,
+          ...editorSnapshot,
+          diff: createCodeDiff(editorSnapshot.expectedCode, data.patch.updatedCode),
+        });
+        addAssistantMessage(`${data.patch.summary}\n\n${data.patch.explanation}\n\nReview the proposed change below, then choose Apply or Reject.`);
+      } else {
+        addAssistantMessage(data.history || data.explain || data.debug || data.progress || data.hint || data.reply || 'No response.');
       }
-    });
-  }, [context.title]);
-
-  // Save chat history to background script whenever messages change
-  useEffect(() => {
-    if (context.title) {
-      chrome.runtime.sendMessage({ type: "save_chat", title: context.title, content: messages }, (response) => {
-        console.log('Chat Saved', response.success);
-      });
+    } catch (error) {
+      if (/editor changed|fresh fix/i.test(error.message)) setPendingPatch(null);
+      addAssistantMessage(error.message);
+    } finally {
+      setLoading(false);
     }
-  }, [messages, context.title]);
-
-  // Track user in backend and observe DOM changes
-  useEffect(() => {
-    let observer;
-    let timeoutId;
-
-    if (userName) {
-      axios.post(`${backendUrl}/user/${userName}`)
-        .then(() => console.log('Successfully username saved'))
-        .catch(() => console.error('username not saved'));
-    }
-
-    const startObserving = () => {
-      if (!window.location.href.includes("/problems/")) return;
-
-      observer = new MutationObserver(() => {
-        clearTimeout(timeoutId);
-        timeoutId = setTimeout(async () => {
-          const data = {
-            title: extractProblemTitle() || '',
-            code: extractCode() || '',
-            language: extractLanguage() || '',
-            problemStatement: extractProblemStatement() || '',
-            testCases: extractTestCases() || []
-          };
-
-          const verdictData = extractVerdict() || '';
-
-          if (userName && verdictData) {
-            try {
-              await axios.post(`${backendUrl}/submission/submit`, {
-                user: userName,
-                title: data.title,
-                code: data.code,
-                language: data.language,
-                verdict: verdictData
-              });
-              console.log('Submission Successful');
-            } catch (err) {
-              console.log('Submission Failed');
-            }
-          }
-
-          if (data.title) {
-            chrome.runtime.sendMessage({ type: "save_title", title: data.title });
-          }
-
-          // Only update state if data changed
-          if (JSON.stringify(data) !== JSON.stringify(Currentdata.current)) {
-            setContext(data);
-            Currentdata.current = data;
-          }
-        }, 500);
-      });
-
-      observer.observe(document.body, { childList: true, subtree: true });
-    };
-
-    startObserving();
-
-    // Cleanup on component unmount
-    return () => {
-      if (observer) observer.disconnect();
-      clearTimeout(timeoutId);
-    };
-  }, [userName]);
-
-  // Toggle chatbox open/close
-  const toggleExpand = () => {
-    setExpanded((prev) => !prev);
   };
 
-  // Handle user query -> send to backend -> AI response
-  const handleAsk = async () => {
-    if (!query.trim()) return;
-    if (!userName) {
-      setMessages(prev => [...prev, { role: 'bot', content: 'Please enter your Leetcode username.' }]);
-      return;
+  const applyPatch = async () => {
+    if (!pendingPatch || applyingPatch) return;
+    setApplyingPatch(true);
+    try {
+      await sendRuntimeMessage({
+        type: 'apply_editor_patch',
+        patch: {
+          expectedCode: pendingPatch.expectedCode,
+          expectedVersionId: pendingPatch.expectedVersionId,
+          expectedModelUri: pendingPatch.expectedModelUri,
+          updatedCode: pendingPatch.updatedCode,
+        },
+      });
+      setPendingPatch(null);
+      addAssistantMessage('Applied the suggested change. You can undo it normally in Monaco with Ctrl+Z.');
+    } catch (error) {
+      addAssistantMessage(error.message);
+    } finally {
+      setApplyingPatch(false);
     }
+  };
 
-    const userMessage = { role: 'user', content: query };
-    setMessages(prev => [...prev, userMessage]);
-    setLoading(true);
-
-    chrome.runtime.sendMessage({ type: "get_chat", title: context.title }, (response) => {
-      const history = Array.isArray(response) ? response : [];
-      axios.post(`${backendUrl}/analyze`, {
-        userId: userName,
-        question: context.problemStatement,
-        code: context.code,
-        language: context.language,
-        title: context.title,
-        input: context.testCases,
-        query: query,
-        chat: history
-      })
-        .then((res) => {
-          const data = res.data;
-          const aiReply =
-            data.history ||
-            data.explain ||
-            data.debug ||
-            data.progress ||
-            data.hint ||
-            data.reply ||
-            'No response.';
-
-          const botMessage = { role: 'bot', content: aiReply };
-          setMessages(prev => [...prev, botMessage]);
-        })
-        .catch((err) => {
-          console.error(err);
-          setMessages(prev => [...prev, { role: 'bot', content: 'Failed to connect to AI.' }]);
-        })
-        .finally(() => {
-          setQuery('');
-          setLoading(false);
-        });
-    });
+  const rejectPatch = () => {
+    setPendingPatch(null);
+    addAssistantMessage('Patch rejected. Your editor was not changed.');
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50">
-      <div className="flex flex-col items-end space-y-2">
-
-        {expanded && (
-          <>
-            {/* Chat Bubble Area */}
-            <div className="w-[320px] max-h-80 overflow-y-auto backdrop-blur-sm rounded-xl p-3 space-y-2">
-              {messages.map((msg, index) => (
-                <div
-                  key={index}
-                  className={`flex items-start ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  {msg.role === 'bot' && (
-                    <div className="w-7 h-7 bg-blue-600 text-white rounded-full flex items-center justify-center mr-2 text-xs font-semibold">B</div>
-                  )}
-                  <div
-                    className={`px-3 py-2 rounded-lg max-w-[75%] text-sm whitespace-pre-wrap ${msg.role === 'user'
-                      ? 'bg-blue-600 text-white rounded-br-none'
-                      : 'bg-zinc-200 text-black rounded-bl-none'
-                      }`}
-                  >
-                    {msg.content}
-                  </div>
-                  {msg.role === 'user' && (
-                    <div className="w-7 h-7 bg-zinc-800 text-white rounded-full flex items-center justify-center ml-2 text-xs font-semibold">U</div>
-                  )}
+    <div className="fixed bottom-[84px] right-4 z-[2147483647] max-w-[calc(100vw-24px)]">
+      <div className="flex max-w-full flex-col items-end gap-2">
+        {expanded && <>
+          <div className="w-[min(360px,calc(100vw-24px))] max-h-[min(420px,calc(100vh-210px))] overflow-y-auto overscroll-contain bg-zinc-950/95 shadow-2xl rounded-xl p-3 space-y-2 border border-zinc-700 box-border">
+            <div className={`text-[11px] rounded px-2 py-1 ${context.editorSource === 'monaco-model' ? 'bg-emerald-950 text-emerald-300' : 'bg-amber-950 text-amber-300'}`}>
+              {context.editorSource === 'monaco-model'
+                ? `Editor: ${context.code.split('\n').length} lines | ${context.language} | Problem: ${context.problemStatement ? 'loaded' : 'missing'} | Inputs: ${context.testCases.length}`
+                : 'Editor model unavailable—code will not be sent until extraction succeeds.'}
+            </div>
+            {messages.map((message, index) => (
+              <div key={`${index}-${message.role}`} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`px-3 py-2 rounded-lg max-w-[82%] text-sm leading-5 whitespace-pre-wrap break-words ${message.role === 'user' ? 'bg-blue-600 text-white' : 'bg-zinc-200 text-black'}`}>
+                  {message.content}
                 </div>
-              ))}
-              {loading && (
-                <div className="text-sm text-gray-400 text-center">Typing...</div>
-              )}
-              <div ref={chatEndRef} />
-            </div>
-
-            {/* Input Box */}
-            <div className="flex items-center space-x-2 mt-2 w-full">
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Ask for a hint, debug, progress..."
-                className="flex-grow px-4 py-2 bg-zinc-900 text-white border border-zinc-700 rounded-md focus:outline-none"
-                onKeyDown={(e) => e.key === 'Enter' && handleAsk()}
-              />
-              <button
-                onClick={handleAsk}
-                className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md"
-              >
-                <SendHorizonal size={20} />
-              </button>
-            </div>
-          </>
-        )}
-
-        {/* Floating Icon */}
-        <button
-          onClick={toggleExpand}
-          className="group relative bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 
-             text-white rounded-full w-14 h-14 flex items-center justify-center 
-             shadow-lg hover:shadow-xl transition-all duration-300 ease-out 
-             hover:scale-110"
-        >
-          {/* Icon */}
-          <Bot size={28} className="transition-transform duration-300 group-hover:rotate-12" />
-
-          {/* Glow ring */}
-          <span className="absolute inset-0 rounded-full bg-blue-400/30 blur-xl opacity-0 
-                   group-hover:opacity-100 transition duration-500"></span>
-
-          {/* Tooltip */}
-          <span className="absolute -top-10 px-3 py-1 text-xs font-medium text-white 
-                   bg-gray-800 rounded-lg opacity-0 group-hover:opacity-100 
-                   transition duration-300">
-            Ask AI
-          </span>
+              </div>
+            ))}
+            {pendingPatch && (
+              <div className="rounded-lg border border-zinc-600 bg-zinc-900 p-2 text-xs text-zinc-100">
+                <div className="mb-2 font-semibold">Proposed editor change</div>
+                <div className="max-h-52 overflow-auto rounded bg-black/50 font-mono leading-5">
+                  {pendingPatch.diff.before.map((line, index) => <div key={`before-${index}`} className="px-2 text-zinc-400">&nbsp; {line}</div>)}
+                  {pendingPatch.diff.removed.slice(0, 40).map((line, index) => <div key={`removed-${index}`} className="bg-red-950 px-2 text-red-300">- {line}</div>)}
+                  {pendingPatch.diff.removed.length > 40 && <div className="px-2 text-zinc-400">… more removed lines</div>}
+                  {pendingPatch.diff.added.slice(0, 40).map((line, index) => <div key={`added-${index}`} className="bg-emerald-950 px-2 text-emerald-300">+ {line}</div>)}
+                  {pendingPatch.diff.added.length > 40 && <div className="px-2 text-zinc-400">… more added lines</div>}
+                  {pendingPatch.diff.after.map((line, index) => <div key={`after-${index}`} className="px-2 text-zinc-400">&nbsp; {line}</div>)}
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <button onClick={applyPatch} disabled={applyingPatch} className="flex-1 rounded bg-emerald-600 px-3 py-2 font-semibold text-white disabled:bg-zinc-600">
+                    {applyingPatch ? 'Applying…' : 'Apply'}
+                  </button>
+                  <button onClick={rejectPatch} disabled={applyingPatch} className="flex-1 rounded bg-zinc-700 px-3 py-2 font-semibold text-white disabled:opacity-50">
+                    Reject
+                  </button>
+                </div>
+              </div>
+            )}
+            {loading && <div className="text-sm text-gray-400">Thinking…</div>}
+            <div ref={chatEndRef} />
+          </div>
+          <div className="flex items-center gap-2 w-[min(360px,calc(100vw-24px))] max-w-full">
+            <input value={query} onChange={event => setQuery(event.target.value)}
+              onKeyDown={event => event.key === 'Enter' && handleAsk()} placeholder="Ask for a hint, debug, progress…"
+              className="min-w-0 flex-1 px-3 py-2 bg-zinc-950 text-white border border-zinc-700 rounded-md outline-none box-border" />
+            <button onClick={handleAsk} disabled={loading} className="shrink-0 p-2 bg-blue-600 disabled:bg-gray-500 text-white rounded-md">
+              <SendHorizontal size={20} />
+            </button>
+          </div>
+        </>}
+        <button onClick={() => setExpanded(value => !value)} aria-label="Toggle AI AlgoBuddy"
+          className="shrink-0 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg hover:scale-105 transition">
+          <Bot size={28} />
         </button>
-
       </div>
     </div>
   );

@@ -1,62 +1,54 @@
 const express = require('express');
+const Submission = require('../models/Submission');
+const HintUsed = require('../models/hintUsed');
+const User = require('../models/User');
+const { validateSubmission } = require('../middleware/validate');
+
 const router = express.Router();
 
-const Submission = require('../models/Submission');
-const hintUsed = require('../models/hintUsed');
-
-router.post('/submit', async (req, res) => {
+router.post('/submit', validateSubmission, async (req, res) => {
   try {
     const { user, title, code, language, verdict } = req.body;
-    let hint = false;
-    const User = await hintUsed.findOne({ user: user, questionId: title });
-    if (User) hint = User.status;
-
-    const updatedSubmission = await Submission.findOneAndUpdate(
-      { user: user, questionId: title },
-      {
-        code,
-        verdict,
-        language,
-        type: hint
-      },
-      {
-        new: true,
-        upsert: true,
-        setDefaultsOnInsert: true
-      }
+    const hint = await HintUsed.exists({ userID: user, questionId: title, status: true });
+    const submission = await Submission.findOneAndUpdate(
+      { user, questionId: title },
+      { code, verdict, language, type: Boolean(hint) },
+      { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true },
     );
-
-    res.status(201).json({ message: 'Submission saved or updated successfully.', submission: updatedSubmission });
-  } catch (err) {
-    console.error('Submission Error:', err);
-    res.status(500).json({ message: 'Server error saving submission.' });
+    await User.findOneAndUpdate(
+      { name: user },
+      { $setOnInsert: { name: user }, $addToSet: { history: submission._id } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+    res.status(201).json({ message: 'Submission saved.', submission });
+  } catch (error) {
+    console.error('Submission error:', error.message);
+    res.status(500).json({ error: 'Could not save submission.' });
   }
 });
-
 
 router.get('/:userId', async (req, res) => {
   try {
-    const { userId } = req.params;
-
-    const submission = await Submission.find({ user: userId }).sort({ createdAt: -1 });
-    return res.status(200).json(submission);
-  }
-  catch (err) {
-    res.status(500).json({ message: 'Error fetching submission' });
+    const submissions = await Submission.find({ user: req.params.userId }).sort({ updatedAt: -1 }).limit(100);
+    res.json(submissions);
+  } catch {
+    res.status(500).json({ error: 'Could not fetch submissions.' });
   }
 });
-
 
 router.delete('/:user/:problemId', async (req, res) => {
   try {
-    const { user, problemId } = req.params;
-
-    await Submission.deleteMany({ user: user, questionId: problemId });
+    const submissions = await Submission.find({ user: req.params.user, questionId: req.params.problemId }).select('_id');
+    const ids = submissions.map(item => item._id);
+    await Promise.all([
+      Submission.deleteMany({ _id: { $in: ids } }),
+      User.updateOne({ name: req.params.user }, { $pull: { history: { $in: ids } } }),
+      HintUsed.deleteMany({ userID: req.params.user, questionId: req.params.problemId }),
+    ]);
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Error deleting submission' })
+  } catch {
+    res.status(500).json({ error: 'Could not delete submission.' });
   }
 });
-
 
 module.exports = router;

@@ -2,7 +2,9 @@ const mongoose = require('mongoose');
 
 const hintUsedSchema = new mongoose.Schema({
    userID:{
-   	type:String,
+    type:String,
+    required:true,
+    trim:true,
    },
    questionId: {
     type: String, 
@@ -16,5 +18,9 @@ const hintUsedSchema = new mongoose.Schema({
 }
 );
 
+hintUsedSchema.index(
+  { userID: 1, questionId: 1 },
+  { unique: true, partialFilterExpression: { userID: { $type: 'string' } } },
+);
 
 module.exports = mongoose.model('hintUsed',hintUsedSchema);

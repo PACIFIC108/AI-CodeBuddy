@@ -6,7 +6,7 @@ const { debugPROMPT } = require('../prompts/prompt');
 
 router.post('/', async (req, res) => {
   try {
-    const { question, code, language, testCases, chat } = req.body;
+    const { question, code, language, testCases, chat, aiConfig } = req.body;
 
     let prompt = `You're an expert coding assistant. A user is solving the following problem:\n\n"${question}"\n\n`;
     prompt += `They submitted this ${language} code:\n\n${code}\n\n`;
@@ -19,7 +19,8 @@ router.post('/', async (req, res) => {
       prompt,
       temp: 0.4,
       cont: 'You are a helpful debugging assistant for competitive programmers.',
-      chat
+      chat,
+      aiConfig
     })
     
 
